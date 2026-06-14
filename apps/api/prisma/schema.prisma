@@ -1,0 +1,467 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ──────────────────────────────────────────────
+// Auth & Identity
+// ──────────────────────────────────────────────
+
+enum UserRole {
+  USER
+  ADMIN
+  CREATOR
+}
+
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  emailVerified Boolean  @default(false)
+  name          String?
+  role          UserRole @default(USER)
+  passwordHash  String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  sessions                Session[]
+  wallet                  Wallet?
+  passwordResetTokens     PasswordResetToken[]
+  emailVerificationTokens EmailVerificationToken[]
+  recoveryAuditLogs       RecoveryAuditLog[]
+  marketSuggestions       MarketSuggestion[]       @relation("SuggestedBy")
+  reviewedSuggestions     MarketSuggestion[]       @relation("ReviewedBy")
+  positions               MarketPosition[]
+  claims                  Claim[]
+  refunds                 Refund[]
+  adminAuditLogs          AdminAuditLog[]
+  uploadedFiles           UploadedFile[]
+  approvedCreatorGrant    ApprovedCreator?         @relation("GrantedTo")
+  approvedCreatorBy       ApprovedCreator[]        @relation("GrantedBy")
+
+  @@map("users")
+}
+
+model Session {
+  id           String    @id @default(cuid())
+  userId       String
+  tokenHash    String    @unique
+  // encryptedWek: AES-256-GCM(wekHex, SESSION_SIGNING_SECRET).
+  // null when the session was created via password-reset recovery flow
+  // (WEK cannot be derived without the original password).
+  // Signing routes check for null and reject with 409 wallet-recovery-incomplete.
+  encryptedWek String?
+  expiresAt    DateTime
+  lastSeenAt   DateTime?
+  ipAddress    String?
+  userAgent    String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model EmailVerificationToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("email_verification_tokens")
+}
+
+// ──────────────────────────────────────────────
+// Wallet
+// ──────────────────────────────────────────────
+
+model Wallet {
+  id                  String   @id @default(cuid())
+  userId              String   @unique
+  address             String   @unique
+  encryptedPrivateKey String
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  keyWraps  WalletKeyWrap[]
+  auditLogs RecoveryAuditLog[]
+
+  @@map("wallets")
+}
+
+enum WrapMethod {
+  PASSWORD
+  RECOVERY
+  SYSTEM
+}
+
+model WalletKeyWrap {
+  id                 String     @id @default(cuid())
+  walletId           String
+  method             WrapMethod
+  encryptedWalletKey String
+  salt               String
+  kdfParams          String
+  createdAt          DateTime   @default(now())
+
+  wallet Wallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
+
+  @@unique([walletId, method])
+  @@map("wallet_key_wraps")
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("password_reset_tokens")
+}
+
+enum AuditAction {
+  WALLET_CREATED
+  KEY_EXPORTED
+  RECOVERY_USED
+  PASSWORD_REWRAP
+  SYSTEM_WRAP_USED
+}
+
+model RecoveryAuditLog {
+  id        String      @id @default(cuid())
+  userId    String
+  walletId  String
+  action    AuditAction
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime    @default(now())
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  wallet Wallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
+
+  @@map("recovery_audit_logs")
+}
+
+// ──────────────────────────────────────────────
+// Market Suggestions (off-chain only)
+// ──────────────────────────────────────────────
+
+enum SuggestionStatus {
+  DRAFT
+  SUBMITTED
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+  CHANGES_REQUESTED
+  // Set after admin calls create-on-chain and the tx succeeds
+  CREATED
+}
+
+model MarketSuggestion {
+  id                 String           @id @default(cuid())
+  suggestedByUserId  String
+  question           String
+  category           String
+  yesCondition       String           @db.Text
+  noCondition        String           @db.Text
+  invalidCondition   String           @db.Text
+  resolutionDeadline DateTime
+  // resolutionUrl: the authoritative URL passed to create_market on-chain.
+  // Required before a suggestion can be promoted to on-chain.
+  resolutionUrl      String?          @db.Text
+  sourcePolicy       String           @db.Text
+  evidencePriority   String           @db.Text
+  resolutionQuery    String
+  status             SuggestionStatus @default(SUBMITTED)
+  reviewedByUserId   String?
+  reviewNotes        String?          @db.Text
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+
+  suggestedBy User    @relation("SuggestedBy", fields: [suggestedByUserId], references: [id])
+  reviewedBy  User?   @relation("ReviewedBy", fields: [reviewedByUserId], references: [id])
+  market      Market?
+
+  @@map("market_suggestions")
+}
+
+model ApprovedCreator {
+  id               String    @id @default(cuid())
+  userId           String    @unique
+  approvedByUserId String
+  approvedAt       DateTime  @default(now())
+  revokedAt        DateTime?
+
+  user       User @relation("GrantedTo", fields: [userId], references: [id])
+  approvedBy User @relation("GrantedBy", fields: [approvedByUserId], references: [id])
+
+  @@map("approved_creators")
+}
+
+// ──────────────────────────────────────────────
+// Markets
+// POSTGRES IS CACHE ONLY for financial state.
+// The KarionMarket contract at GENLAYER_CONTRACT_ADDRESS is the sole source of
+// truth for: status, outcome, yes_pool, no_pool, confidence, claimed state.
+// Never derive financial eligibility from these cached fields.
+// ──────────────────────────────────────────────
+
+enum MarketStatus {
+  OPEN
+  LOCKED
+  // RESOLVING: DB-only status while a resolve_market tx is pending consensus.
+  // On-chain the market is still LOCKED until consensus finalises.
+  RESOLVING
+  RESOLVED
+  INVALID
+  UNRESOLVED
+  CANCELLED
+}
+
+enum MarketOutcome {
+  YES
+  NO
+  INVALID
+  UNRESOLVED
+}
+
+model Market {
+  id                 String        @id @default(cuid())
+  suggestionId       String?       @unique
+  onChainMarketId    String        @unique
+  contractAddress    String
+  question           String
+  category           String
+  // Condition fields — populated when market is created, for display only
+  yesCondition       String?       @db.Text
+  noCondition        String?       @db.Text
+  invalidCondition   String?       @db.Text
+  resolutionUrl      String?
+  resolutionQuery    String?
+  status             MarketStatus  @default(OPEN)
+  resolutionDeadline DateTime
+  // Pool caches — stored as decimal strings to avoid BigInt precision loss.
+  // These are behind the contract; use get_market for authoritative values.
+  yesPoolCached      String        @default("0")
+  noPoolCached       String        @default("0")
+  totalPoolCached    String        @default("0")
+  finalOutcomeCached MarketOutcome?
+  confidence         String?       // HIGH | MEDIUM | LOW — from consensus
+  resolutionNote     String?       // e.g. "GenLayer consensus: YES [HIGH]"
+  resolvedAt         DateTime?
+  creatorAddress     String?       // on-chain creator (deployer address)
+  lastSyncedAt       DateTime?
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  suggestion         MarketSuggestion?        @relation(fields: [suggestionId], references: [id])
+  positions          MarketPosition[]
+  resolutions        GenlayerResolution[]
+  resolutionAttempts MarketResolutionAttempt[]
+  claims             Claim[]
+  refunds            Refund[]
+  contractEvents     ContractEvent[]
+
+  @@map("markets")
+}
+
+// ──────────────────────────────────────────────
+// Positions & Transactions
+// POSTGRES IS CACHE ONLY for positions.
+// Use get_position() on the contract for authoritative stake + claimed values.
+// ──────────────────────────────────────────────
+
+enum StakeSide {
+  YES
+  NO
+}
+
+model MarketPosition {
+  id                   String    @id @default(cuid())
+  userId               String
+  marketId             String
+  onChainMarketId      String
+  side                 StakeSide
+  // amountGen: cumulative stake for this (user, market, side) — updated on each stake.
+  // Stored as a decimal string (wei). Authoritative value is from get_position().
+  amountGen            String    @default("0")
+  transactionHash      String    // most recent stake tx for this position
+  claimed              Boolean   @default(false)
+  claimTransactionHash String?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  user   User   @relation(fields: [userId], references: [id])
+  market Market @relation(fields: [marketId], references: [id])
+
+  @@unique([userId, marketId, side])
+  @@map("market_positions")
+}
+
+model MarketResolutionAttempt {
+  id              String   @id @default(cuid())
+  marketId        String
+  triggeredBy     String?
+  transactionHash String?
+  status          String   @default("PENDING")
+  errorMessage    String?
+  attemptedAt     DateTime @default(now())
+
+  market Market @relation(fields: [marketId], references: [id])
+
+  @@map("market_resolution_attempts")
+}
+
+// ──────────────────────────────────────────────
+// Contract Transaction Log
+// Records every on-chain interaction submitted by the backend.
+// Updated to FINALIZED/ERROR once receipt is confirmed.
+// ──────────────────────────────────────────────
+
+model ContractTransaction {
+  id               String   @id @default(cuid())
+  txHash           String   @unique
+  // txType enum values (stored as string for extensibility):
+  // CREATE_MARKET | STAKE_YES | STAKE_NO | LOCK_MARKET | RESOLVE_MARKET
+  // CLAIM_PAYOUT  | CLAIM_REFUND | FAILED_SIGNING
+  txType           String
+  onChainMarketId  String?  // contract-level market ID (no FK — may not be indexed yet)
+  userAddress      String?  // wallet address that signed (null for deployer actions)
+  valueWei         String?  // stake or payout amount as decimal string
+  status           String   @default("PENDING") // PENDING | FINALIZED | ERROR
+  executionResult  String?  // SUCCESS | ERROR (leader_receipt[0].execution_result)
+  errorDescription String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@map("contract_transactions")
+}
+
+// ──────────────────────────────────────────────
+// GenLayer Resolutions
+// ──────────────────────────────────────────────
+
+model GenlayerResolution {
+  id                        String        @id @default(cuid())
+  marketId                  String
+  onChainMarketId           String
+  contractAddress           String
+  resolutionTransactionHash String
+  finalOutcome              MarketOutcome
+  confidenceLabel           String?
+  reasoningSummary          String?       @db.Text
+  evidenceDigest            String?       @db.Text
+  evidenceSummary           String?       @db.Text
+  resolvedAt                DateTime
+  createdAt                 DateTime      @default(now())
+
+  market Market @relation(fields: [marketId], references: [id])
+
+  @@map("genlayer_resolutions")
+}
+
+// ──────────────────────────────────────────────
+// Claims & Refunds
+// ──────────────────────────────────────────────
+
+model Claim {
+  id              String    @id @default(cuid())
+  userId          String
+  marketId        String
+  side            StakeSide
+  amountClaimed   String
+  transactionHash String
+  claimedAt       DateTime  @default(now())
+
+  user   User   @relation(fields: [userId], references: [id])
+  market Market @relation(fields: [marketId], references: [id])
+
+  @@map("claims")
+}
+
+model Refund {
+  id              String   @id @default(cuid())
+  userId          String
+  marketId        String
+  amountRefunded  String
+  transactionHash String
+  refundedAt      DateTime @default(now())
+
+  user   User   @relation(fields: [userId], references: [id])
+  market Market @relation(fields: [marketId], references: [id])
+
+  @@map("refunds")
+}
+
+// ──────────────────────────────────────────────
+// Contract Events
+// ──────────────────────────────────────────────
+
+model ContractEvent {
+  id              String   @id @default(cuid())
+  marketId        String?
+  eventType       String
+  transactionHash String
+  userAddress     String?  // 0x wallet address for stake/claim events
+  valueWei        String?  // stake amount as decimal string
+  blockNumber     Int?     // always null for GenLayer (no block model)
+  payloadJson     Json?    // outcome, confidence, errorDescription, etc.
+  createdAt       DateTime @default(now())
+
+  market Market? @relation(fields: [marketId], references: [id])
+
+  @@unique([transactionHash, eventType])
+  @@map("contract_events")
+}
+
+// ──────────────────────────────────────────────
+// Admin Audit
+// userId is nullable to allow system-triggered actions (e.g., worker auto-resolve).
+// ──────────────────────────────────────────────
+
+model AdminAuditLog {
+  id         String   @id @default(cuid())
+  userId     String?  // null for system/worker actions
+  action     String
+  targetType String?
+  targetId   String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@map("admin_audit_logs")
+}
+
+// ──────────────────────────────────────────────
+// File Uploads
+// ──────────────────────────────────────────────
+
+model UploadedFile {
+  id          String   @id @default(cuid())
+  userId      String
+  relatedType String?
+  relatedId   String?
+  fileUrl     String
+  fileKey     String
+  fileType    String
+  fileSize    Int
+  createdAt   DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("uploaded_files")
+}

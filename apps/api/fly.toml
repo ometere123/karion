@@ -1,0 +1,35 @@
+app = "karion-api"
+primary_region = "lhr"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[deploy]
+  release_command = "npx prisma migrate deploy"
+
+[env]
+  NODE_ENV                  = "production"
+  API_PORT                  = "4000"
+  GENLAYER_RPC_URL          = "https://studio.genlayer.com/api"
+  GENLAYER_CHAIN_ID         = "61999"
+  GENLAYER_EXPLORER_URL     = "https://explorer-studio.genlayer.com"
+  GENLAYER_CONTRACT_ADDRESS = "0x90DEDD8bCef8d0872f746cfb56D15E805747BF24"
+  ENABLE_MARKET_SYNC        = "true"
+  SYNC_INTERVAL_MS          = "60000"
+  RESOLVE_RETRY_COOLDOWN_MS = "600000"
+
+[http_service]
+  internal_port        = 4000
+  force_https          = true
+  auto_stop_machines   = "off"
+  auto_start_machines  = true
+  min_machines_running = 1
+
+  [http_service.concurrency]
+    type       = "connections"
+    hard_limit = 100
+    soft_limit = 80
+
+[[vm]]
+  size   = "shared-cpu-1x"
+  memory = "512mb"

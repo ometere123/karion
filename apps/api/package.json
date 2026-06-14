@@ -1,0 +1,43 @@
+{
+  "name": "karion-api",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc && tsc-alias",
+    "start": "node dist/index.js",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate dev",
+    "db:migrate:prod": "prisma migrate deploy",
+    "db:seed": "tsx prisma/seed.ts",
+    "db:studio": "prisma studio",
+    "worker": "tsx src/workers/resolution-worker.ts"
+  },
+  "dependencies": {
+    "express": "^5.1.0",
+    "cors": "^2.8.5",
+    "helmet": "^8.0.0",
+    "@node-rs/argon2": "^2.0.0",
+    "nodemailer": "^6.9.0",
+    "express-rate-limit": "^7.5.0",
+    "@prisma/client": "^6.6.0",
+    "genlayer-js": "^0.7.0",
+    "ethers": "^6.13.0",
+    "uploadthing": "^7.0.0",
+    "zod": "^3.24.0",
+    "dotenv": "^16.4.0",
+    "cookie-parser": "^1.4.7"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "tsx": "^4.19.0",
+    "tsc-alias": "^1.8.0",
+    "@types/node": "^22.0.0",
+    "@types/express": "^5.0.0",
+    "@types/cors": "^2.8.17",
+    "@types/cookie-parser": "^1.4.8",
+    "@types/nodemailer": "^6.4.0",
+    "prisma": "^6.6.0"
+  }
+}

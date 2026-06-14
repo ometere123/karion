@@ -1,0 +1,133 @@
+@import "tailwindcss";
+
+@theme {
+  /* === Karion Color System === */
+  --color-obsidian: #07111F;
+  --color-deep-ink: #05070D;
+  --color-graphite: #101827;
+  --color-slate-panel: #172033;
+  --color-steel-line: #273449;
+
+  --color-consensus-violet: #6D5DF6;
+  --color-consensus-violet-dim: #6D5DF620;
+  --color-signal-cyan: #22D3EE;
+  --color-signal-cyan-dim: #22D3EE20;
+  --color-verdict-green: #16A34A;
+  --color-verdict-green-dim: #16A34A20;
+  --color-liquid-red: #DC2626;
+  --color-liquid-red-dim: #DC262620;
+  --color-market-amber: #F59E0B;
+  --color-market-amber-dim: #F59E0B20;
+  --color-gen-mint: #2DD4BF;
+
+  --color-frost: #F8FAFC;
+  --color-blue-grey: #94A3B8;
+
+  /* === Font Families === */
+  --font-display: 'Space Grotesk', system-ui, sans-serif;
+  --font-body: 'Inter', system-ui, sans-serif;
+  --font-data: 'IBM Plex Mono', ui-monospace, monospace;
+}
+
+@layer base {
+  html {
+    font-family: var(--font-body);
+    color: var(--color-frost);
+    background-color: var(--color-deep-ink);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    min-height: 100vh;
+  }
+
+  ::selection {
+    background-color: var(--color-consensus-violet);
+    color: white;
+  }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: var(--color-deep-ink);
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-steel-line);
+    border-radius: 3px;
+  }
+}
+
+@utility font-display {
+  font-family: var(--font-display);
+}
+
+@utility font-data {
+  font-family: var(--font-data);
+}
+
+@utility text-frost {
+  color: var(--color-frost);
+}
+
+@utility text-muted {
+  color: var(--color-blue-grey);
+}
+
+@utility bg-obsidian {
+  background-color: var(--color-obsidian);
+}
+
+@utility bg-deep-ink {
+  background-color: var(--color-deep-ink);
+}
+
+@utility bg-graphite {
+  background-color: var(--color-graphite);
+}
+
+@utility bg-slate-panel {
+  background-color: var(--color-slate-panel);
+}
+
+@utility border-steel {
+  border-color: var(--color-steel-line);
+}
+
+@utility text-violet {
+  color: var(--color-consensus-violet);
+}
+
+@utility bg-violet {
+  background-color: var(--color-consensus-violet);
+}
+
+@utility text-cyan {
+  color: var(--color-signal-cyan);
+}
+
+@utility text-green {
+  color: var(--color-verdict-green);
+}
+
+@utility text-red {
+  color: var(--color-liquid-red);
+}
+
+@utility text-amber {
+  color: var(--color-market-amber);
+}
+
+@utility glow-violet {
+  box-shadow: 0 0 20px var(--color-consensus-violet-dim), 0 0 40px var(--color-consensus-violet-dim);
+}
+
+@utility glow-cyan {
+  box-shadow: 0 0 20px var(--color-signal-cyan-dim);
+}
+
+@utility glow-green {
+  box-shadow: 0 0 20px var(--color-verdict-green-dim);
+}
