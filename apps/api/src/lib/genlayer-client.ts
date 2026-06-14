@@ -4,16 +4,17 @@
 // SECURITY: GENLAYER_DEPLOYER_PRIVATE_KEY is read once at module load and used
 // only to create the account object. It is never logged or serialised.
 //
-// SPONSORSHIP MODEL (StudioNet constraint):
-// On StudioNet, only the pre-authorized deployer account can call
-// ConsensusMain.addTransaction at the EVM layer. However, the `_sender`
-// parameter in addTransaction is what GenLayer uses as gl.message.sender_address
-// inside the Python contract — it is NOT derived from EVM msg.sender.
-// We exploit this: the deployer signs all EVM transactions, but each user's
-// wallet address is passed as `_sender`, so the contract attributes stakes,
-// positions, and payouts to the correct user address.
+// TRANSACTION MODEL:
+// User-funded staking: stake_yes, stake_no, claim_payout, claim_refund are
+// submitted by the user's embedded wallet account via sendUserFundedWriteContract.
+// The user's wallet signs the EVM transaction and pays the GEN stake value.
+// gl.message.sender_address in the Python contract is the user's wallet address.
+//
+// Admin-only writes (create_market, lock_market, resolve_market) use the deployer
+// account via deployerClient.writeContract directly — no value is transferred.
 
 import { createClient, createAccount, abi as glAbi } from "genlayer-js";
+import type { Account } from "viem";
 import { localnet } from "genlayer-js/chains";
 import { encodeFunctionData } from "viem";
 
@@ -56,14 +57,16 @@ const consensusReady: Promise<void> = new Promise((resolve, reject) => {
   setTimeout(check, 300);
 });
 
-// Sends a GenLayer write transaction on behalf of a user address.
-// The deployer account signs the EVM transaction (it is pre-authorized on
-// StudioNet), but the user's wallet address is passed as `_sender` in the
-// ConsensusMain.addTransaction call. GenLayer uses that address as
-// gl.message.sender_address inside the Python contract, correctly attributing
-// stakes and payouts to the user.
-export async function sendSponsoredWriteContract(params: {
-  userAddress: string;
+// Sends a GenLayer write transaction signed and funded by the user's embedded
+// wallet. The user account signs the EVM transaction, pays the GEN value, and
+// is passed as _sender in ConsensusMain.addTransaction — so gl.message.sender_address
+// inside the Python contract is the user's address. The deployer does not pay
+// and does not appear as sender in contract state.
+//
+// Uses deployerClient's already-initialized chain (consensusMainContract address
+// and ABI) so no second initialization round-trip is needed.
+export async function sendUserFundedWriteContract(params: {
+  userAccount: Account;
   contractAddress: string;
   functionName: string;
   args?: unknown[];
@@ -71,57 +74,29 @@ export async function sendSponsoredWriteContract(params: {
 }): Promise<string> {
   await consensusReady;
 
-  const chain = studionet as any;
-  const consensusAddress: `0x${string}` = chain.consensusMainContract?.address;
-  const consensusAbi = chain.consensusMainContract?.abi;
-
-  if (!consensusAbi) {
-    throw new Error("Consensus contract ABI not available");
-  }
-
-  // Encode the inner GenLayer calldata (the KarionMarket function call).
-  // Only include args if non-empty, mirroring genlayer-js makeCalldataObject.
-  const calldataObj: Record<string, unknown> = { method: params.functionName };
-  if (params.args && params.args.length > 0) calldataObj.args = params.args;
-  const innerCalldata = glAbi.calldata.encode(calldataObj as any);
-
-  // Serialize to the transaction data bytes GenLayer expects.
-  const txData = glAbi.transactions.serialize([innerCalldata, false]);
-
-  // Encode the ConsensusMain.addTransaction call with user's address as sender.
-  const encodedCalldata = encodeFunctionData({
-    abi: consensusAbi,
-    functionName: "addTransaction",
-    args: [
-      params.userAddress,
-      params.contractAddress,
-      chain.defaultNumberOfInitialValidators ?? 5,
-      chain.defaultConsensusMaxRotations ?? 3,
-      txData,
-    ],
-  });
-
-  // Get the deployer's current nonce.
-  const nonce = await (deployerClient as any).getCurrentNonce({
-    address: deployerAccount.address,
-  });
-
-  // Build the EVM transaction — deployer is the from address.
-  const txRequest = await deployerClient.prepareTransactionRequest({
-    account: deployerAccount,
-    to: consensusAddress,
-    data: encodedCalldata,
-    type: "legacy",
-    nonce,
+  return deployerClient.writeContract({
+    account: params.userAccount,
+    address: params.contractAddress as any,
+    functionName: params.functionName,
+    args: params.args as any,
     value: params.value ?? 0n,
-  } as any);
+  }) as Promise<string>;
+}
 
-  // Sign with deployer's private key.
-  const signed = await deployerAccount.signTransaction(txRequest as any);
+// Admin-only deployer write — used for create_market, lock_market, resolve_market.
+// No value is transferred; the deployer is the authorized admin submitter.
+export async function sendDeployerWriteContract(params: {
+  contractAddress: string;
+  functionName: string;
+  args?: unknown[];
+}): Promise<string> {
+  await consensusReady;
 
-  // Send via eth_sendRawTransaction — deployer is authorized on StudioNet.
-  return (deployerClient as any).sendRawTransaction({
-    serializedTransaction: signed,
+  return deployerClient.writeContract({
+    address: params.contractAddress as any,
+    functionName: params.functionName,
+    args: params.args as any,
+    value: 0n,
   }) as Promise<string>;
 }
 

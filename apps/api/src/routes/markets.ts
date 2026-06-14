@@ -25,6 +25,22 @@ import { createUserAccountFromSession } from "../lib/wallet-signer.js";
 
 const router = Router();
 
+async function fetchStudioNetBalance(address: string): Promise<bigint> {
+  const res = await fetch(process.env.GENLAYER_RPC_URL || "https://studio.genlayer.com/api", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      method: "eth_getBalance",
+      params: [address, "latest"],
+      id: 1,
+    }),
+  });
+  const json = (await res.json()) as { result?: string };
+  if (!json.result) throw new Error("StudioNet balance check failed");
+  return BigInt(json.result);
+}
+
 // ── Amount validation helpers ─────────────────────────────────────────────────
 // All GEN amounts use BigInt only — Number() is never used for wei values.
 
@@ -159,12 +175,22 @@ router.post(
     }
 
     try {
-      const { walletAddress } = await createUserAccountFromSession(
+      const { account, walletAddress } = await createUserAccountFromSession(
         req.user!.id,
         req.sessionEncryptedWek!
       );
 
-      const txHash = await stakeYes(walletAddress, onChainMarketId, amount);
+      const balance = await fetchStudioNetBalance(walletAddress);
+      if (balance < amount) {
+        res.status(409).json({
+          error: "Insufficient wallet balance",
+          balanceWei: balance.toString(),
+          requiredWei: amount.toString(),
+        });
+        return;
+      }
+
+      const txHash = await stakeYes(account, onChainMarketId, amount);
 
       await prisma.contractTransaction.create({
         data: {
@@ -257,12 +283,22 @@ router.post(
     }
 
     try {
-      const { walletAddress } = await createUserAccountFromSession(
+      const { account, walletAddress } = await createUserAccountFromSession(
         req.user!.id,
         req.sessionEncryptedWek!
       );
 
-      const txHash = await stakeNo(walletAddress, onChainMarketId, amount);
+      const balance = await fetchStudioNetBalance(walletAddress);
+      if (balance < amount) {
+        res.status(409).json({
+          error: "Insufficient wallet balance",
+          balanceWei: balance.toString(),
+          requiredWei: amount.toString(),
+        });
+        return;
+      }
+
+      const txHash = await stakeNo(account, onChainMarketId, amount);
 
       await prisma.contractTransaction.create({
         data: {
@@ -351,7 +387,7 @@ router.post(
         return;
       }
 
-      const { walletAddress } = await createUserAccountFromSession(
+      const { account, walletAddress } = await createUserAccountFromSession(
         req.user!.id,
         req.sessionEncryptedWek!
       );
@@ -360,14 +396,14 @@ router.post(
       let txType: string;
 
       if (status === "RESOLVED") {
-        txHash = await claimPayout(walletAddress, onChainMarketId);
+        txHash = await claimPayout(account, onChainMarketId);
         txType = "CLAIM_PAYOUT";
       } else if (
         status === "INVALID" ||
         status === "UNRESOLVED" ||
         status === "CANCELLED"
       ) {
-        txHash = await claimRefund(walletAddress, onChainMarketId);
+        txHash = await claimRefund(account, onChainMarketId);
         txType = "CLAIM_REFUND";
       } else {
         res.status(409).json({

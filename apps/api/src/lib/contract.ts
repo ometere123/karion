@@ -14,11 +14,12 @@
 
 import { TransactionStatus } from "genlayer-js/types";
 import type { TransactionHash } from "genlayer-js/types";
+import type { Account } from "viem";
 import {
   CONTRACT_ADDRESS,
   deployerClient,
-  deployerAccount,
-  sendSponsoredWriteContract,
+  sendUserFundedWriteContract,
+  sendDeployerWriteContract,
   mapToObj,
 } from "./genlayer-client.js";
 
@@ -88,8 +89,8 @@ export async function getPosition(
 // These use the deployer account and are admin-only at the route layer.
 
 export async function createMarket(params: CreateMarketParams): Promise<string> {
-  const txHash = await deployerClient.writeContract({
-    address: addr,
+  return sendDeployerWriteContract({
+    contractAddress: addr,
     functionName: "create_market",
     args: [
       params.marketId,
@@ -101,64 +102,43 @@ export async function createMarket(params: CreateMarketParams): Promise<string> 
       params.resolutionQuery,
       params.deadline,
     ],
-    value: 0n,
   });
-  return txHash as string;
 }
 
 export async function lockMarket(marketId: string): Promise<string> {
-  const txHash = await deployerClient.writeContract({
-    address: addr,
+  return sendDeployerWriteContract({
+    contractAddress: addr,
     functionName: "lock_market",
     args: [marketId],
-    value: 0n,
   });
-  return txHash as string;
 }
 
 export async function resolveMarket(marketId: string): Promise<string> {
-  const txHash = await deployerClient.writeContract({
-    address: addr,
+  return sendDeployerWriteContract({
+    contractAddress: addr,
     functionName: "resolve_market",
     args: [marketId],
-    value: 0n,
   });
-  return txHash as string;
 }
 
-// ── User writes — StudioNet relay / sponsorship model ────────────────────────
+// ── User writes — user-funded embedded wallet model ──────────────────────────
 //
-// On StudioNet, only the pre-authorised deployer account may call
-// ConsensusMain.addTransaction at the EVM layer. New user wallet accounts are
-// rejected by the network regardless of their GEN balance.
+// Each function receives the user's decrypted Account object (from
+// createUserAccountFromSession). The user account signs the EVM transaction
+// and pays the GEN value from its own balance. The deployer is not involved.
 //
-// However, ConsensusMain.addTransaction takes an explicit `_sender` parameter
-// (address) in its calldata. GenLayer's consensus layer uses that value as
-// gl.message.sender_address when executing the Python contract — it does NOT
-// derive it from the EVM transaction's msg.sender.
-//
-// We exploit this: sendSponsoredWriteContract() builds the EVM transaction
-// signed by the deployer, but places the user's embedded wallet address as
-// `_sender`. Inside KarionMarket.py the contract therefore sees:
-//
-//   gl.message.sender_address  ==  user's wallet address  (NOT the deployer)
-//
-// Consequences:
-//   - Stakes are stored under the user's address as the position key.
-//   - claim_payout / claim_refund read the position by the user's address.
-//   - The GEN transfer (emit_transfer) targets the user's wallet address.
-//
-// The deployer is a relay only. It does not own, control, or receive any
-// position or payout belonging to a user. Misreading this as deployer ownership
-// of user positions would be incorrect.
+// genlayer-js writeContract uses account.address as _sender in
+// ConsensusMain.addTransaction, so gl.message.sender_address in the Python
+// contract is the user's address. Positions, payouts, and refunds are all
+// keyed to the user's embedded wallet address.
 
 export async function stakeYes(
-  userAddress: string,
+  userAccount: Account,
   marketId: string,
   valueWei: bigint
 ): Promise<string> {
-  return sendSponsoredWriteContract({
-    userAddress,
+  return sendUserFundedWriteContract({
+    userAccount,
     contractAddress: addr,
     functionName: "stake_yes",
     args: [marketId],
@@ -167,12 +147,12 @@ export async function stakeYes(
 }
 
 export async function stakeNo(
-  userAddress: string,
+  userAccount: Account,
   marketId: string,
   valueWei: bigint
 ): Promise<string> {
-  return sendSponsoredWriteContract({
-    userAddress,
+  return sendUserFundedWriteContract({
+    userAccount,
     contractAddress: addr,
     functionName: "stake_no",
     args: [marketId],
@@ -181,11 +161,11 @@ export async function stakeNo(
 }
 
 export async function claimPayout(
-  userAddress: string,
+  userAccount: Account,
   marketId: string
 ): Promise<string> {
-  return sendSponsoredWriteContract({
-    userAddress,
+  return sendUserFundedWriteContract({
+    userAccount,
     contractAddress: addr,
     functionName: "claim_payout",
     args: [marketId],
@@ -193,11 +173,11 @@ export async function claimPayout(
 }
 
 export async function claimRefund(
-  userAddress: string,
+  userAccount: Account,
   marketId: string
 ): Promise<string> {
-  return sendSponsoredWriteContract({
-    userAddress,
+  return sendUserFundedWriteContract({
+    userAccount,
     contractAddress: addr,
     functionName: "claim_refund",
     args: [marketId],
