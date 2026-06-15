@@ -23,8 +23,12 @@ export async function signupUser(
 
   const passwordHash = await hash(password, ARGON2_OPTS);
 
+  const isAdmin =
+    process.env.ADMIN_EMAIL &&
+    email.toLowerCase() === process.env.ADMIN_EMAIL.toLowerCase();
+
   const user = await prisma.user.create({
-    data: { email, passwordHash },
+    data: { email, passwordHash, role: isAdmin ? "ADMIN" : "USER" },
   });
 
   const walletData = await createEmbeddedWallet(password);
