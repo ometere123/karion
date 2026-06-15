@@ -25,7 +25,7 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 type ActionState =
-  | { type: "approve"; id: string; note: string }
+  | { type: "approve-and-create"; id: string; note: string }
   | { type: "reject"; id: string; note: string }
   | { type: "create"; id: string };
 
@@ -145,17 +145,19 @@ export default function AdminSuggestionsPage() {
     load();
   }, [load]);
 
-  async function handleApprove() {
-    if (action?.type !== "approve") return;
+  async function handleApproveAndCreate() {
+    if (action?.type !== "approve-and-create") return;
     setSubmitting(true);
     setActionError(null);
     try {
       await admin.suggestions.approve(action.id, action.note || undefined);
-      setActionSuccess("Suggestion approved");
+      const res = await admin.suggestions.create(action.id);
+      setActionSuccess(`Market created on-chain: ${res.market.onChainMarketId}`);
       setAction(null);
       load();
     } catch (e: unknown) {
-      setActionError(e instanceof Error ? e.message : "Approve failed");
+      setActionError(e instanceof Error ? e.message : "Action failed");
+      load(); // reload — suggestion may now be APPROVED even if create failed
     } finally {
       setSubmitting(false);
     }
@@ -344,14 +346,14 @@ export default function AdminSuggestionsPage() {
                         <button
                           onClick={() =>
                             setAction(
-                              isActing && action.type === "approve"
+                              isActing && action.type === "approve-and-create"
                                 ? null
-                                : { type: "approve", id: s.id, note: "" },
+                                : { type: "approve-and-create", id: s.id, note: "" },
                             )
                           }
                           className="rounded-lg border border-verdict-green/30 bg-verdict-green/10 px-3 py-1.5 text-xs font-medium text-green transition-colors hover:bg-verdict-green/20"
                         >
-                          Approve
+                          Approve &amp; Create
                         </button>
                         <button
                           onClick={() =>
@@ -416,12 +418,19 @@ export default function AdminSuggestionsPage() {
                       </div>
                     )}
 
-                    {(action.type === "approve" || action.type === "reject") && (
+                    {(action.type === "approve-and-create" || action.type === "reject") && (
                       <div className="space-y-3">
+                        {action.type === "approve-and-create" && (
+                          <p className="text-sm text-muted">
+                            This will approve the suggestion and immediately call{" "}
+                            <code className="font-data text-xs text-frost">create_market</code>{" "}
+                            on-chain. The transaction may take 30–90 seconds to finalise.
+                          </p>
+                        )}
                         <label className="block text-sm text-muted">
                           {action.type === "reject"
                             ? "Rejection reason (required)"
-                            : "Review note (optional)"}
+                            : "Note for submitter (optional)"}
                         </label>
                         <textarea
                           value={action.note}
@@ -439,22 +448,22 @@ export default function AdminSuggestionsPage() {
                         <div className="flex gap-2">
                           <button
                             onClick={
-                              action.type === "approve"
-                                ? handleApprove
+                              action.type === "approve-and-create"
+                                ? handleApproveAndCreate
                                 : handleReject
                             }
                             disabled={submitting}
                             className={cn(
                               "rounded-lg px-4 py-2 text-sm font-semibold text-white transition-opacity disabled:opacity-40",
-                              action.type === "approve"
+                              action.type === "approve-and-create"
                                 ? "bg-verdict-green hover:opacity-90"
                                 : "bg-liquid-red hover:opacity-90",
                             )}
                           >
                             {submitting
-                              ? "Saving…"
-                              : action.type === "approve"
-                                ? "Confirm Approve"
+                              ? "Working…"
+                              : action.type === "approve-and-create"
+                                ? "Confirm Approve & Create"
                                 : "Confirm Reject"}
                           </button>
                           <button

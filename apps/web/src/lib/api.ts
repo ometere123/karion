@@ -434,6 +434,20 @@ export const admin = {
       get<{ attempts: MarketResolutionAttempt[]; cooldownUntil: string | null }>(
         `/api/admin/markets/${id}/resolve-attempts`,
       ),
+    directCreate: (payload: {
+      question: string;
+      category: string;
+      yesCondition: string;
+      noCondition: string;
+      invalidCondition: string;
+      resolutionUrl: string;
+      resolutionQuery: string;
+      resolutionDeadline: string;
+    }) =>
+      post<{ market: AdminMarket; txHash: string; executionResult: string }>(
+        "/api/admin/markets/direct",
+        { ...payload, confirm: true },
+      ),
   },
 
   transactions: {

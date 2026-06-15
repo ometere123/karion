@@ -58,6 +58,22 @@
     background: var(--color-steel-line);
     border-radius: 3px;
   }
+
+  /* Light mode: override surface + text tokens; accents unchanged */
+  html[data-theme="light"] {
+    --color-deep-ink: #F8FAFC;
+    --color-obsidian: #FFFFFF;
+    --color-graphite: #F1F5F9;
+    --color-slate-panel: #E2E8F0;
+    --color-steel-line: #CBD5E1;
+    --color-frost: #0F172A;
+    --color-blue-grey: #64748B;
+    --color-consensus-violet-dim: #6D5DF630;
+    --color-signal-cyan-dim: #22D3EE30;
+    --color-verdict-green-dim: #16A34A30;
+    --color-liquid-red-dim: #DC262630;
+    --color-market-amber-dim: #F59E0B30;
+  }
 }
 
 @utility font-display {

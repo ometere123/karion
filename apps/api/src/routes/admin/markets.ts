@@ -3,7 +3,8 @@ import { z } from "zod";
 import { validate } from "../../middleware/validate.js";
 import { requireAdmin, type AuthRequest } from "../../middleware/auth.js";
 import { prisma } from "../../lib/prisma.js";
-import { lockMarket, resolveMarket, waitForReceipt } from "../../lib/contract.js";
+import { createMarket, lockMarket, resolveMarket, waitForReceipt } from "../../lib/contract.js";
+import { CONTRACT_ADDRESS } from "../../lib/genlayer-client.js";
 import { writeEventForTx } from "../../lib/events.js";
 import { getResolveCooldown } from "../../lib/resolution.js";
 
@@ -95,6 +96,123 @@ router.get("/transactions", requireAdmin, async (req, res) => {
   } catch (err) {
     console.error("[admin/transactions/list]", err);
     res.status(500).json({ error: "Failed to fetch transactions" });
+  }
+});
+
+const directCreateSchema = z.object({
+  confirm: z.literal(true),
+  question: z.string().min(10).max(500),
+  category: z.string().min(1).max(100),
+  yesCondition: z.string().min(5).max(500),
+  noCondition: z.string().min(5).max(500),
+  invalidCondition: z.string().min(5).max(500),
+  resolutionUrl: z.string().url().max(2000),
+  resolutionQuery: z.string().min(10).max(1000),
+  resolutionDeadline: z.string().min(1),
+});
+
+// POST /api/admin/markets/direct — create a market without a suggestion
+// Admin bypasses the suggestion queue and creates on-chain directly.
+// Requires confirm:true. Waits for finality.
+router.post("/direct", requireAdmin, validate(directCreateSchema), async (req: AuthRequest, res) => {
+  try {
+    const {
+      question, category, yesCondition, noCondition,
+      invalidCondition, resolutionUrl, resolutionQuery, resolutionDeadline: deadlineStr,
+    } = req.body as z.infer<typeof directCreateSchema>;
+
+    const deadline = new Date(deadlineStr);
+    if (isNaN(deadline.getTime())) {
+      res.status(400).json({ error: "Invalid resolutionDeadline" });
+      return;
+    }
+    const deadlineUnix = BigInt(Math.floor(deadline.getTime() / 1000));
+    if (deadlineUnix <= BigInt(Math.floor(Date.now() / 1000))) {
+      res.status(409).json({ error: "Resolution deadline must be in the future" });
+      return;
+    }
+
+    const onChainMarketId = `mkt-d-${Date.now()}`;
+
+    const txHash = await createMarket({
+      marketId: onChainMarketId,
+      question,
+      yesCondition,
+      noCondition,
+      invalidCondition,
+      resolutionUrl,
+      resolutionQuery,
+      deadline: deadlineUnix,
+    });
+
+    await prisma.contractTransaction.create({
+      data: { txHash, txType: "CREATE_MARKET", onChainMarketId, status: "PENDING" },
+    });
+
+    await prisma.adminAuditLog.create({
+      data: {
+        userId: req.user!.id,
+        action: "CREATE_MARKET_DIRECT",
+        targetType: "MARKET",
+        targetId: onChainMarketId,
+        metadata: { onChainMarketId, txHash, question },
+      },
+    });
+
+    console.log(`[admin/direct-create] waiting for finality: ${txHash}`);
+    const receipt = await waitForReceipt(txHash, 300);
+
+    await prisma.contractTransaction.update({
+      where: { txHash },
+      data: {
+        status: "FINALIZED",
+        executionResult: receipt.executionResult ?? undefined,
+        errorDescription: receipt.errorDescription ?? undefined,
+      },
+    });
+
+    writeEventForTx({
+      txHash,
+      txType: "CREATE_MARKET",
+      onChainMarketId,
+      userAddress: null,
+      valueWei: null,
+      executionResult: receipt.executionResult,
+      errorDescription: receipt.errorDescription ?? null,
+    }).catch((err) => console.error("[admin/direct-create] event write error:", err));
+
+    if (receipt.executionResult !== "SUCCESS") {
+      res.status(422).json({
+        error: "Contract rejected create_market",
+        txHash,
+        executionResult: receipt.executionResult,
+        errorDescription: receipt.errorDescription,
+      });
+      return;
+    }
+
+    const market = await prisma.market.create({
+      data: {
+        suggestionId: null,
+        onChainMarketId,
+        contractAddress: CONTRACT_ADDRESS,
+        question,
+        category,
+        yesCondition,
+        noCondition,
+        invalidCondition,
+        resolutionUrl,
+        resolutionQuery,
+        resolutionDeadline: deadline,
+        status: "OPEN",
+        lastSyncedAt: new Date(),
+      },
+    });
+
+    res.status(201).json({ market, txHash, executionResult: "SUCCESS" });
+  } catch (err) {
+    console.error("[admin/markets/direct]", err);
+    res.status(500).json({ error: "Failed to create market" });
   }
 });
 

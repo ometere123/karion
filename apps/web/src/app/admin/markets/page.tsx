@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import Link from "next/link";
 import { admin, ApiResponseError } from "@/lib/api";
 import type { AdminMarket, SyncStatus, MarketResolutionAttempt } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -272,14 +273,22 @@ export default function AdminMarketsPage() {
 
   return (
     <div>
-      <div className="mb-6 flex items-center justify-between">
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <h1 className="font-display text-2xl font-bold text-frost">Markets</h1>
-        <button
-          onClick={load}
-          className="rounded-lg border border-steel bg-graphite px-3 py-1.5 text-xs text-muted hover:text-frost transition-colors"
-        >
-          ↻ Refresh
-        </button>
+        <div className="flex gap-2">
+          <Link
+            href="/admin/markets/create"
+            className="rounded-lg bg-violet px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90"
+          >
+            + Create Market
+          </Link>
+          <button
+            onClick={load}
+            className="rounded-lg border border-steel bg-graphite px-3 py-1.5 text-xs text-muted hover:text-frost transition-colors"
+          >
+            ↻ Refresh
+          </button>
+        </div>
       </div>
 
       <SyncPanel sync={sync} />
