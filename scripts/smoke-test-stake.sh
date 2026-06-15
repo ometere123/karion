@@ -3,10 +3,11 @@
 # Run against the live Fly API with a real user session.
 #
 # Usage:
-#   SESSION_COOKIE="karion-session=..." MARKET_ID="mkt-xxx" bash scripts/smoke-test-stake.sh
+#   SESSION_COOKIE="karion_session=..." MARKET_ID="mkt-xxx" bash scripts/smoke-test-stake.sh
 #
 # Requires:
 #   - SESSION_COOKIE: copy from browser DevTools > Application > Cookies after logging in
+#     The cookie is named karion_session (underscore, not hyphen).
 #   - MARKET_ID: an OPEN on-chain market ID from /admin/markets
 #   - API: pointing at https://karion-api.fly.dev (default below)
 #   - jq installed
