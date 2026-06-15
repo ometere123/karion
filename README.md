@@ -15,7 +15,7 @@ A decentralized prediction market platform built on [GenLayer StudioNet](https:/
 2. Users fund their embedded wallet with StudioNet GEN before staking
 3. Anyone can suggest a market question — admin reviews and approves it
 4. Approved markets go on-chain via the deployer relay account
-5. Users stake YES or NO from their embedded wallet — the backend relays the transaction but passes the user's wallet as `_sender`, so the contract attributes all positions to the user
+5. Users stake YES or NO — the stake transaction is signed by and paid from the user's embedded wallet. The deployer is not the economic funder of user bets. Contract positions, payouts, and refunds are all attributed to the user's wallet address
 6. At deadline, the sync worker triggers resolution: the contract fetches the resolution URL, applies AI consensus, and sets the outcome (YES / NO / INVALID / UNRESOLVED)
 7. Winners claim their proportional share of the pool; the contract handles all payouts
 
@@ -66,7 +66,7 @@ karion/
 │   │   │   ├── index.ts        # App entry, env validation, route wiring
 │   │   │   ├── lib/
 │   │   │   │   ├── contract.ts         # All on-chain read/write wrappers
-│   │   │   │   ├── genlayer-client.ts  # Deployer account, sponsored tx sender
+│   │   │   │   ├── genlayer-client.ts  # Deployer client; user-funded and deployer write helpers
 │   │   │   │   ├── wallet.ts           # Encrypted per-user wallet management
 │   │   │   │   ├── session.ts          # JWT cookie creation and validation
 │   │   │   │   ├── crypto.ts           # WEK encrypt/decrypt (AES-256-GCM)
@@ -129,7 +129,9 @@ karion/
 
 Written in Python for the GenLayer runtime. Key design decisions:
 
-- **Embedded wallet staking with relayed submission**: Each user receives an embedded wallet at signup and funds it with StudioNet GEN before staking. The backend relays StudioNet transactions using the deployer key where required by the StudioNet submission flow, but the contract receives the user's embedded wallet as `_sender`, so positions, claims, and refunds are attributed to the user wallet, not the deployer. The deployer is a relay/submission key only — it does not own user positions or fund user stakes.
+- **User-funded embedded wallet staking**: Each user receives an embedded wallet at signup and funds it with StudioNet GEN before staking. YES/NO stake transactions are signed by the user's embedded wallet, and the stake value is paid from that wallet. The backend decrypts and uses the embedded wallet only inside the secure signing flow. The deployer is not the economic funder of user bets; it remains reserved for admin or protocol actions such as market creation, locking, and resolution where needed. Contract state remains the source of truth for pools, positions, outcomes, payouts, and refunds.
+
+  > **StudioNet / mainnet note**: StudioNet gas behaviour may differ from mainnet. The current balance check verifies stake amount, but a production mainnet version should account for stake plus gas.
 - **AI resolution**: The contract fetches `resolution_url` and uses GenLayer's equivalence principle (`eq_principle_strict_eq` / `eq_principle_prompt_comparative`) to determine the outcome autonomously.
 - **No manual override**: The contract does not expose a function for admin to set outcomes. Resolution is fully deterministic based on the fetched data.
 - **Confidence levels**: Post-consensus, the contract sets `HIGH / MEDIUM / LOW` confidence on each resolved market.
